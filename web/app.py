@@ -152,20 +152,32 @@ with tab1:
     if run_btn and prompt_text:
         with st.spinner("🤖 Generating deterministic Python test script with AI..."):
             script_path, code = generator.generate_script(prompt_text, test_name=custom_test_name or None)
+            st.session_state["last_script_path"] = script_path
+            st.session_state["last_code"] = code
             st.success(f"✅ Generated & Saved to `{script_path.name}`")
-
-        with col_code:
-            st.markdown(f"#### 2. Generated Python Script (`{script_path.name}`)")
-            st.code(code, language="python")
-
-        st.markdown("---")
-        st.markdown("#### 3. Sandbox Execution & Dual-Device Live Timeline")
-        progress_bar = st.progress(0, text="Executing in Sandbox...")
 
         with st.spinner("⚡ Running test script in sandbox..."):
             summary = runner.run_script(script_path, allow_simulation=allow_sim)
             report_path = analyzer.analyze_and_report(summary)
-            progress_bar.progress(100, text="Execution Complete!")
+            st.session_state["last_summary"] = summary
+            st.session_state["last_report_path"] = report_path
+
+    # Check if there is an active/previous run in session state
+    if "last_code" in st.session_state and "last_script_path" in st.session_state:
+        with col_code:
+            st.markdown(f"#### 2. Generated Python Script (`{st.session_state['last_script_path'].name}`)")
+            st.code(st.session_state["last_code"], language="python")
+    else:
+        with col_code:
+            st.markdown("#### 2. Python Script Preview")
+            st.info("💡 Click **'🚀 Generate & Run Test in Sandbox'** on the left to generate the script and execute live dual-device testing.")
+
+    if "last_summary" in st.session_state:
+        summary = st.session_state["last_summary"]
+        report_path = st.session_state.get("last_report_path", Path(summary.get("run_dir", "")) / "report.html")
+
+        st.markdown("---")
+        st.markdown("#### 3. Sandbox Execution & Dual-Device Live Timeline")
 
         # Display Metrics Cards
         is_pass = summary.get("status") == "PASSED"
@@ -191,13 +203,24 @@ with tab1:
                 if step.get("screenshots"):
                     cols = st.columns(len(step["screenshots"]))
                     for idx, s_name in enumerate(step["screenshots"]):
-                        img_path = Path(summary["run_dir"]) / "screenshots" / s_name
-                        if img_path.exists():
+                        # Check multiple path candidates to support local and cloud deployments
+                        candidate_paths = [
+                            Path(summary["run_dir"]) / "screenshots" / s_name,
+                            BASE_DIR / "artifacts" / Path(summary["run_dir"]).name / "screenshots" / s_name,
+                            ARTIFACTS_DIR / Path(summary["run_dir"]).name / "screenshots" / s_name
+                        ]
+                        found_path = None
+                        for cp in candidate_paths:
+                            if cp.exists():
+                                found_path = cp
+                                break
+                        
+                        if found_path:
                             with cols[idx]:
-                                st.image(str(img_path), caption=s_name, use_container_width=True)
+                                st.image(str(found_path), caption=s_name, use_container_width=True)
 
         # Download Report button
-        if report_path.exists():
+        if isinstance(report_path, Path) and report_path.exists():
             with open(report_path, "r", encoding="utf-8") as rf:
                 report_html = rf.read()
             st.download_button(
@@ -286,6 +309,17 @@ with tab3:
                     if s_data.get("error_message"):
                         st.error(f"Error: {s_data.get('error_message')}")
                     
+                    # Display screenshot preview of run
+                    ss_dir = run / "screenshots"
+                    if ss_dir.exists():
+                        ss_files = sorted(list(ss_dir.glob("*.png")))
+                        if ss_files:
+                            st.markdown("##### 📸 Run Screenshots")
+                            ss_cols = st.columns(min(len(ss_files), 4))
+                            for idx, ss_f in enumerate(ss_files[:8]):
+                                with ss_cols[idx % min(len(ss_files), 4)]:
+                                    st.image(str(ss_f), caption=ss_f.name, use_container_width=True)
+
                     if rep_file.exists():
                         with open(rep_file, "r", encoding="utf-8") as rf:
                             html_text = rf.read()
