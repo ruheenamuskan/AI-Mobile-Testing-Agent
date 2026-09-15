@@ -120,6 +120,28 @@ tab1, tab_lib, tab2, tab3 = st.tabs([
 
 # TAB 1: GENERATE & RUN TEST
 with tab1:
+    # Auto-load latest historical run on initial page load if none active
+    if "last_summary" not in st.session_state:
+        latest_runs = sorted(list(ARTIFACTS_DIR.glob("run_*")), reverse=True)
+        for r in latest_runs:
+            sum_json = r / "summary.json"
+            if sum_json.exists():
+                try:
+                    with open(sum_json, "r", encoding="utf-8") as f:
+                        s_data = json.load(f)
+                        st.session_state["last_summary"] = s_data
+                        st.session_state["last_report_path"] = r / "report.html"
+                        
+                        # Find corresponding script
+                        saved_scripts = sorted(list(TESTS_GENERATED_DIR.glob("test_*.py")), reverse=True)
+                        if saved_scripts:
+                            st.session_state["last_script_path"] = saved_scripts[0]
+                            with open(saved_scripts[0], "r", encoding="utf-8") as sf:
+                                st.session_state["last_code"] = sf.read()
+                    break
+                except Exception:
+                    pass
+
     col_input, col_code = st.columns([1.1, 0.9])
 
     with col_input:
