@@ -129,6 +129,7 @@ with tab1:
                 try:
                     with open(sum_json, "r", encoding="utf-8") as f:
                         s_data = json.load(f)
+                        s_data["run_dir"] = str(r)
                         st.session_state["last_summary"] = s_data
                         st.session_state["last_report_path"] = r / "report.html"
                         
@@ -221,15 +222,19 @@ with tab1:
         st.markdown("##### 📸 Step-by-Step Device Screen Comparison")
         steps = summary.get("steps", [])
         for step in steps:
-            with st.expander(f"Step {step['step_index']}: {step['name']} ({step['status']} - {step['duration']}s)", expanded=True):
+            with st.expander(f"Step {step.get('step_index', 1)}: {step.get('name', 'Step')} ({step.get('status', 'PASSED')} - {step.get('duration', 0)}s)", expanded=True):
                 if step.get("screenshots"):
                     cols = st.columns(len(step["screenshots"]))
+                    
+                    # Normalize run folder name across Windows and Linux
+                    raw_run_dir = str(summary.get("run_dir", "")).replace("\\", "/")
+                    run_folder_name = raw_run_dir.rstrip("/").split("/")[-1] if raw_run_dir else ""
+
                     for idx, s_name in enumerate(step["screenshots"]):
-                        # Check multiple path candidates to support local and cloud deployments
                         candidate_paths = [
-                            Path(summary["run_dir"]) / "screenshots" / s_name,
-                            BASE_DIR / "artifacts" / Path(summary["run_dir"]).name / "screenshots" / s_name,
-                            ARTIFACTS_DIR / Path(summary["run_dir"]).name / "screenshots" / s_name
+                            ARTIFACTS_DIR / run_folder_name / "screenshots" / s_name,
+                            BASE_DIR / "artifacts" / run_folder_name / "screenshots" / s_name,
+                            Path(summary.get("run_dir", "")) / "screenshots" / s_name
                         ]
                         found_path = None
                         for cp in candidate_paths:
@@ -237,9 +242,18 @@ with tab1:
                                 found_path = cp
                                 break
                         
+                        # Universal glob fallback
+                        if not found_path:
+                            matches = list(ARTIFACTS_DIR.glob(f"**/{s_name}"))
+                            if matches:
+                                found_path = matches[0]
+                        
                         if found_path:
                             with cols[idx]:
                                 st.image(str(found_path), caption=s_name, use_container_width=True)
+                        else:
+                            with cols[idx]:
+                                st.info(f"📸 {s_name}")
 
         # Download Report button
         if isinstance(report_path, Path) and report_path.exists():
